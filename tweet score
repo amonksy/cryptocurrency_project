@@ -1,36 +1,26 @@
 https://github.com/Twitter-Sentiment-Analysis/R/blob/master/score_sentiment.R
 
-setwd("C:/Users/andy/project")
-install.packages("devtools")
+#setwd("C:/Users/andy/project")
+#install.packages("devtools")
 
-devtools::install_version("httr", version="0.6.0", repos="http://cran.us.r-project.org")
+#devtools::install_version("httr", version="0.6.0", repos="http://cran.us.r-project.org")
 
 
 install.packages("wordcloud")
-#install.packages('base64enc')
-#install.packages('ROAuth')
-#install.packages('stringr')
 install.packages('twitteR')
-#install.packages("openssl")
-#install.packages("httpuv")
 install.packages("ggplot2")
 install.packages("dplyr")
 install.packages("tm")
-#library(RColorBrewer)
-#library(wordcloud)
-#library(tm)
+
+library(tm)
 library(twitteR)
-#library(ROAuth)
 library(plyr)
 library(dplyr)
 library(stringr)
-#library(base64enc)
-#library("openssl")
-#library("httpuv")
 library(ggplot2)
 library(wordcloud)
 
-
+library(purrr)
 
 #step 1 twitter web application
 
@@ -46,11 +36,13 @@ setup_twitter_oauth(api_key,
                     access_token_secret) 
 
 #request the tweets from twitter and store them in a database
-bitcoin <- searchTwitter("bitcoin", n=10000, lang=NULL, since = "2018-04-18", until = "2018-04-25")
+tweet1 <- searchTwitter("bitcoin", n=100, lang=NULL, since = "2018-04-19", until = "2018-04-26")
+tweet_df <- tbl_df(map_df(tweet1, as.data.frame))
 n.length<-length(bitcoin)
 
+
 #write tweets in a csv file
-write.csv(df, file='C:/Users/Brid/desktop/RangersTweets.csv', row.names=F)
+#write.csv(df, file='D:/Users/D14124207/Downloads/RangersTweets.csv', row.names=F)
 #remove retweets - twitter bots can skew data
 strip_retweets(bitcoin)
 
@@ -65,14 +57,14 @@ saveRDS(df, file='bitcoin.rds')
 df1 <- readRDS('bitcoin.rds')
 
 #dplyr library to remove non distinct tweets
-dplyr::distinct(df1)
+#dplyr::distinct(df1)
 
 #Corpora are collections of documents containing (natural language) text. In packages which employ the infrastructure provided by package tm, such corpora are represented via the virtual S3 class Corpus: such packages then provide S3 corpus classes extending the virtual base class (such as VCorpus provided by package tm itself).
 #2. clean data
-dim(bitcoin.df)
+#dim(bitcoin.df)
 library(tm)
 #build corpus - clean code came from https://pdfs.semanticscholar.org/presentation/d3f5/698f76cc511a25419afaa64b29c7ddfbdbe4.pdf
-corpus <- Corpus(VectorSource(df1$text))
+corpus <- Corpus(VectorSource(bitcoin.df$text))
 
 #remove the URL's
 removeURL <- function(x) gsub("http[^[:space:]]*", "", x)
@@ -101,13 +93,12 @@ corpus <- tm_map(corpus, stripWhitespace)
 
 tweet <- corpus
 
-View(corpus)
 #for stemming
 #corpuscopy <- corpus
 #myCorpus <- tm_map(myCorpus, stemDocument)
 
-corpus.df <- twListToDF(corpus) 
-write.csv(corpus.df, file='C:/Users/Brid/desktop/RasngersTweets.csv', row.names=F)
+#corpus.df <- twListToDF(corpus) 
+#write.csv(corpus.df, file='C:/Users/Brid/desktop/RasngersTweets.csv', row.names=F)
 
 wordFreq <- function(corpus, word) {
   results <- lapply(corpus,
@@ -168,20 +159,12 @@ print(fig)
 #https://www.cs.uic.edu/~liub/FBS/sentiment-analysis.html#lexicon
 #opinion lexicon
 
-pos.words <- read.table('C:/Users/Brid/Desktop/positive-words.txt', 
-               sep="\t", 
-               col.names=c("word"), 
-               fill=FALSE, 
-               strip.white=TRUE)
+pos.words = scan('D:/Users/D14124207/Downloads/positive-words.txt', what='character', comment.char=";")
+                        
 
-neg.words <- read.table('C:/Users/Brid/Desktop/negative-words.txt', 
-                        sep="\t", 
-                        col.names=c("word"), 
-                        fill=FALSE, 
-                        strip.white=TRUE)
-
-score.sentiment = function(sentences, pos.words, neg.words, .progress='none')
-{
+neg.words <- scan('D:/Users/D14124207/Downloads/negative-words.txt', what='character', comment.char=";") 
+                     
+score.sentiment <- function(sentences, pos.words, neg.words, .progress="none"){
   require(plyr)
   require(stringr)
   
@@ -190,38 +173,38 @@ score.sentiment = function(sentences, pos.words, neg.words, .progress='none')
   # we want a simple array (“a”) of scores back, so we use 
   # “l” + “a” + “ply” = “laply”:
   
-  scores = laply(sentences, function(sentence, pos.words, neg.words) {
+  scores <- laply(sentences, function(sentence, pos.words, neg.words) {
     
     # clean up sentences with R’s regex-driven global substitute, gsub():
-    sentence = gsub('[[:punct:]]', '', sentence)
-    sentence = gsub('[[:cntrl:]]', '', sentence)
-    sentence = gsub('\\d+', '', sentence)
+    sentence <- gsub('[[:punct:]]', '', sentence)
+    sentence <- gsub('[[:cntrl:]]', '', sentence)
+    sentence <- gsub('\\d+', '', sentence)
     # and convert to lower case:
-    sentence = tolower(sentence)
+    sentence <- tolower(sentence)
     
     # split into words. str_split is in the stringr package
-    word.list = str_split(sentence, '\\s+')
+    word.list <- str_split(sentence, '\\s+')
     # sometimes a list() is one level of hierarchy too much
-    words = unlist(word.list)
+    words <- unlist(word.list)
     
     # compare our words to the dictionaries of positive & negative terms
-    pos.matches = match(words, pos.words)
-    neg.matches = match(words, neg.words)
+    pos.matches <- match(words, pos.words)
+    neg.matches <- match(words, neg.words)
     
     # match() returns the position of the matched term or NA
     # we just want a TRUE/FALSE:
-    pos.matches = !is.na(pos.matches)
-    neg.matches = !is.na(neg.matches)
+    pos.matches <- !is.na(pos.matches)
+    neg.matches <- !is.na(neg.matches)
     
     # and conveniently enough, TRUE/FALSE will be treated as 1/0 by sum():
-    score = sum(pos.matches) - sum(neg.matches)
-    
+    score <- sum(pos.matches) - sum(neg.matches)
     return(score)
   }, pos.words, neg.words, .progress=.progress )
-  
   scores.df = data.frame(score=scores, text=sentences)
   return(scores.df)
 }
 
 
-analysis <- score.sentiment(bitcoin.df, pos.words, neg.words) # calls sentiment function
+analysis <- score.sentiment(tweet_df$text, pos.words, neg.words,.progress='text') # calls sentiment function
+
+hist(analysis$score)
