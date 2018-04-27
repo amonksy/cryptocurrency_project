@@ -1,0 +1,130 @@
+
+library(twitteR)
+#install.packages("twitteR")
+library(stringr)
+install.packages("tm")
+library(tm)
+#install.packages("ggmap")
+library(ggmap)
+library(plyr)
+library(dplyr)
+library(wordcloud)
+
+
+api_key <- '24bX1GdLrWz4nPRFfVToEC8HV'
+api_secret <- 'OjLiRyCIA0gytIjh5qvqhJKsnNHMLzyN7uC1JmHvmHZgDqwJzM'
+access_token <- '935260315180249088-cMoc1FFpvE5ZFqcSN0JlDBELFqXIPG2'
+access_token_secret <- '4f0Nk7tXMumLk5g4Ot5HF4uS82vvvZBcykINP7s1ow1cQ'
+
+
+setup_twitter_oauth(api_key,
+                    api_secret,
+                    access_token,
+                    access_token_secret) 
+
+bitcoin<-searchTwitter("bitcoin", n=1500)
+
+bitcoin2 <- twListToDF(bitcoin)
+
+myCorpus <- VCorpus(VectorSource(bitcoin2$text))
+#removeURL <- function(x) gsub("http[^[:space:]]*", "", x)
+#myCorpus <- tm_map(myCorpus, content_transformer(removeURL))
+myCorpus <- gsub("[^[:alpha:][:space:]]*", "", myCorpus)
+#myCorpus <- tm_map(myCorpus, content_transformer(removeNumPunct))
+myCorpus <- tm_map(myCorpus, stripWhitespace)
+#myCorpus <- tm_map(myCorpus, stemDocument)
+
+
+
+dtm <- DocumentTermMatrix(myCorpus)
+inspect(dtm)
+
+#terms that occur at least 5 times
+cx <- findFreqTerms(dtm, 100)
+
+#document term matrix get quite large, so remove sparse items
+inspect(removeSparseTerms(dtm, 0.4))
+
+
+#https://cran.r-project.org/web/packages/tm/vignettes/tm.pdf
+
+myCorpus <- Corpus(VectorSource(myCorpus))
+
+myCorpus <- tm_map(dtm, removeWords, c(stopwords("english"),"and", "are"))
+
+#stop words not getting deleted?
+#Most frequent words after removing stop words
+r<- findFreqTerms(dtm, 100)
+
+(freq.terms <- findFreqTerms(tdm, lowfreq = 50))
+
+#Plot of most frequent words
+term.freq <- rowSums(as.matrix(tdm))
+term.freq <- subset(term.freq, term.freq >= 50)
+df2 <- data.frame(term = names(term.freq), freq = term.freq)
+ggplot(df2, aes(x=term, y=freq)) + geom_bar(stat="identity") +xlab("Terms") + ylab("Count") + coord_flip() +theme(axis.text=element_text(size=7))
+
+
+#Calculating the sentiment score
+View(stopwords)
+
+df <- twListToDF(bitcoin)
+df <- df[, order(names(df))]
+df$created <- strftime(df$created, '%Y-%m-%d')
+if (file.exists(paste("bitcoin", '_stack.csv'))==FALSE) write.csv(df, file=paste("bitcoin", '_stack.csv'), row.names=F) 
+stack <- read.csv(file=paste("bitcoin", '_stack.csv'))
+stack <- rbind(stack, df)
+stack <- subset(stack, !duplicated(stack$text))
+write.csv(stack, file=paste("bitcoin", '_stack.csv'), row.names=F)
+
+score.sentiment <- function(sentences, pos.words, neg.words, .progress='none')
+{
+  require(plyr)
+  require(stringr)
+  scores <- laply(sentences, function(sentence, pos.words, neg.words){
+    sentence <- gsub('[[:punct:]]', "", sentence)
+    sentence <- gsub('[[:cntrl:]]', "", sentence)
+    sentence <- gsub('\\d+', "", sentence)
+    sentence <- tolower(sentence)
+    word.list <- str_split(sentence, '\\s+')
+    words <- unlist(word.list)
+    pos.matches <- match(words, pos.words)
+    neg.matches <- match(words, neg.words)
+    pos.matches <- !is.na(pos.matches)
+    neg.matches <- !is.na(neg.matches)
+    score <- sum(pos.matches) - sum(neg.matches)
+    return(score)
+  }, pos.words, neg.words, .progress=.progress)
+  scores.df <- data.frame(score=scores, text=sentences)
+  return(scores.df)
+}
+
+
+pos <- scan('D:/Users/D14124207/Downloads/positive-words.txt', what='character', comment.char=";")
+
+
+neg <- scan('D:/Users/D14124207/Downloads/negative-words.txt', what='character', comment.char=";") 
+
+
+Dataset <- stack
+Dataset$text <- as.factor(Dataset$text)
+Dataset$text<- str_replace_all(Dataset$text,"í ½í²¸í ½í²°' "," ")
+scores <- score.sentiment(Dataset$text, pos, neg, .progress='text')
+
+
+write.csv(scores, file=paste("bitcoin", '_scores.csv'), row.names=TRUE)
+stat <- scores
+stat$created <- stack$created
+stat$created <- as.Date(stat$created)
+stat <- mutate(stat, tweet=ifelse(stat$score > 0, 'positive', ifelse(stat$score < 0, 'negative', 'neutral')))
+by.tweet <- group_by(stat, tweet, created)
+
+by.tweet <- summarise(by.tweet, number=n())
+write.csv(by.tweet, file=paste("bitcoin", '_opin.csv'), row.names=TRUE)
+
+
+ggplot(by.tweet, aes(created, number)) + geom_line(aes(group=tweet, color=tweet), size=2) +
+  geom_point(aes(group=tweet, color=tweet), size=4) +
+  theme(text = element_text(size=18), axis.text.x = element_text(angle=90, vjust=1)) +
+  
+  ggtitle(bitcoin)
