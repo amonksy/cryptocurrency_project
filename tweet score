@@ -1,210 +1,128 @@
-https://github.com/Twitter-Sentiment-Analysis/R/blob/master/score_sentiment.R
-
-#setwd("C:/Users/andy/project")
-#install.packages("devtools")
-
-#devtools::install_version("httr", version="0.6.0", repos="http://cran.us.r-project.org")
-
-
-install.packages("wordcloud")
-install.packages('twitteR')
-install.packages("ggplot2")
-install.packages("dplyr")
-install.packages("tm")
-
+bitcoin<-searchTwitter("bitcoin", n=1500)
+library(stringr)
 library(tm)
-library(twitteR)
+install.packages("ggmap")
+library(ggmap)
 library(plyr)
 library(dplyr)
-library(stringr)
-library(ggplot2)
 library(wordcloud)
 
-library(purrr)
 
-#step 1 twitter web application
+bitcoin2 <- twListToDF(bitcoin)
 
-api_key <- '24bX1GdLrWz4nPRFfVToEC8HV'
-api_secret <- 'OjLiRyCIA0gytIjh5qvqhJKsnNHMLzyN7uC1JmHvmHZgDqwJzM'
-access_token <- '935260315180249088-cMoc1FFpvE5ZFqcSN0JlDBELFqXIPG2'
-access_token_secret <- '4f0Nk7tXMumLk5g4Ot5HF4uS82vvvZBcykINP7s1ow1cQ'
-
-
-setup_twitter_oauth(api_key,
-                    api_secret,
-                    access_token,
-                    access_token_secret) 
-
-#request the tweets from twitter and store them in a database
-tweet1 <- searchTwitter("bitcoin", n=100, lang=NULL, since = "2018-04-19", until = "2018-04-26")
-tweet_df <- tbl_df(map_df(tweet1, as.data.frame))
-n.length<-length(bitcoin)
-
-
-#write tweets in a csv file
-#write.csv(df, file='D:/Users/D14124207/Downloads/RangersTweets.csv', row.names=F)
-#remove retweets - twitter bots can skew data
-strip_retweets(bitcoin)
-
-#function used to convert twitter lists to dataframes
-#convert to data frame using the twListtoDF function
-bitcoin.df <- twListToDF(bitcoin) #extract the data frame save it locally
-head(bitcoin.df)#looking for header of the tweet text
-
-head(bitcoin.df$text)
-
-saveRDS(df, file='bitcoin.rds')
-df1 <- readRDS('bitcoin.rds')
-
-#dplyr library to remove non distinct tweets
-#dplyr::distinct(df1)
-
-#Corpora are collections of documents containing (natural language) text. In packages which employ the infrastructure provided by package tm, such corpora are represented via the virtual S3 class Corpus: such packages then provide S3 corpus classes extending the virtual base class (such as VCorpus provided by package tm itself).
-#2. clean data
-#dim(bitcoin.df)
-library(tm)
-#build corpus - clean code came from https://pdfs.semanticscholar.org/presentation/d3f5/698f76cc511a25419afaa64b29c7ddfbdbe4.pdf
-corpus <- Corpus(VectorSource(bitcoin.df$text))
-
-#remove the URL's
-removeURL <- function(x) gsub("http[^[:space:]]*", "", x)
-
-#apply fxn to corpus
-corpus <- tm_map(corpus, content_transformer(removeURL))
-
-#remove non english words and spaces
-ASCii <- function(x) gsub("[^[:alpha:][:space:]]*", "", x)
-
-#remove punctuation
-corpus <- tm_map(corpus, content_transformer(ASCii))
-
-corpus <- tm_map(corpus, stripWhitespace)
-
-#stopwords function in r
-stopwords<- stopwords(kind='en')
-corpus <- tm_map(corpus, removeWords,stopwords)
-
-# convert to lower case
-
-corpus <- tm_map(corpus, content_transformer(tolower))
-
-#strip whitespace
-corpus <- tm_map(corpus, stripWhitespace)
-
-tweet <- corpus
-
-#for stemming
-#corpuscopy <- corpus
+myCorpus <- VCorpus(VectorSource(bitcoin2$text))
+#removeURL <- function(x) gsub("http[^[:space:]]*", "", x)
+myCorpus <- tm_map(myCorpus, content_transformer(removeURL))
+#removeNumPunct <- function(x) gsub("[^[:alpha:][:space:]]*", "", x)
+#myCorpus <- tm_map(myCorpus, content_transformer(removeNumPunct))
+myCorpus <- tm_map(myCorpus, stripWhitespace)
 #myCorpus <- tm_map(myCorpus, stemDocument)
+myCorpus <- Corpus(VectorSource(myCorpus))
 
-#corpus.df <- twListToDF(corpus) 
-#write.csv(corpus.df, file='C:/Users/Brid/desktop/RasngersTweets.csv', row.names=F)
 
+dtm <- DocumentTermMatrix(myCorpus)
+inspect(dtm)
+
+findFreqTerms(dtm, 5)
+
+inspect(removeSparseTerms(dtm, 0.4))
+
+
+#https://cran.r-project.org/web/packages/tm/vignettes/tm.pdf
 wordFreq <- function(corpus, word) {
   results <- lapply(corpus,
                     function(x) { grep(as.character(x), pattern=paste0("\\<",word)) }
   )
   sum(unlist(results))
 }
-tdm <- TermDocumentMatrix(corpus,control = list(wordLengths = c(1, Inf)))
+tdm <- TermDocumentMatrix(myCorpus,control = list(wordLengths = c(1, Inf)))
 tdm
 
-(freq.terms <- findFreqTerms(tdm, lowfreq = 10))
 
-#rst
-#Term document matrix built from corpus, elements in the matrix represent the occurence of a term in a document
-#investigate most occuring words left in matrix
-library(reshape2)
-library(ggplot2)
-
-tdm <- DocumentTermMatrix(corpus)
-
-tdm.matrix <- as.matrix(tdm)
-tdm.matrix <- sort(rowSums(tdm.matrix), decreasing=TRUE)
-
-tdm.df <- data.frame(word=names(tdm.matrix), freq=tdm.matrix)
-head(tdm.df,10)
-wordcount <- colSums(tdm.matrix)
-topten <- head(sort(wordcount, decreasing=TRUE), 10)
+(freq.terms <- findFreqTerms(tdm, lowfreq = 100))
 
 
-dfplot <- as.data.frame(melt(topten))
-dfplot$word <- dimnames(dfplot)[[1]]
-dfplot$word <- factor(dfplot$word,
-                      levels=dfplot$word[order(dfplot$value,
-                                               decreasing=TRUE)])
 
-fig <- ggplot(dfplot, aes(x=word, y=value)) + geom_bar(stat="identity")
-fig <- fig + xlab("Word in Corpus")
-fig <- fig + ylab("Count")
-print(fig)
-#
-#install.packages("Rgraphviz")
-#library(graph)
-#library(Rgraphviz)
-#plot(tdm, term = freq.terms, corThreshold = 0.1, weighting = T)
-
-#wordcloud(corpus ,max.words =150,min.freq=3,scale=c(4,.5),colors=palette())
-
-#tdm <- TermDocumentMatrix(myCorpus,control = list(wordLengths = c(1, Inf)))
-#(freq.terms <- findFreqTerms(tdm, lowfreq = 5))
+myStopwords <- c(setdiff(stopwords('english'), c("r", "big")),"and", "when", "what", "to", "this","the","that","so","of","it","is","in","at","a","be","by","for","have","on","our","are","i","will","with","you")
+myCorpus <- tm_map(myCorpus, removeWords, myStopwords)
+library(wordcloud)
+wordcloud(myCorpus ,max.words =150,min.freq=3,scale=c(4,.5),colors=palette())
 
 
-#term.freq <- rowSums(as.matrix(tdm))
-#term.freq <- subset(term.freq, term.freq >= 4)
-#df2 <- data.frame(term = names(term.freq), freq = term.freq)
-#ggplot(df2, aes(x=term, y=freq)) + geom_bar(stat="identity") +xlab("Terms") + ylab("Count") + coord_flip() +theme(axis.text=element_text(size=7))
+
+tdm <- TermDocumentMatrix(myCorpus,control = list(wordLengths = c(1, Inf)))
+tdm
+
+#Most frequent words after removing stop words
+
+(freq.terms <- findFreqTerms(tdm, lowfreq = 50))
+
+#Plot of most frequent words
+term.freq <- rowSums(as.matrix(tdm))
+term.freq <- subset(term.freq, term.freq >= 50)
+df2 <- data.frame(term = names(term.freq), freq = term.freq)
+ggplot(df2, aes(x=term, y=freq)) + geom_bar(stat="identity") +xlab("Terms") + ylab("Count") + coord_flip() +theme(axis.text=element_text(size=7))
 
 
-#https://www.cs.uic.edu/~liub/FBS/sentiment-analysis.html#lexicon
-#opinion lexicon
+#Calculating the sentiment score
 
-pos.words = scan('D:/Users/D14124207/Downloads/positive-words.txt', what='character', comment.char=";")
-                        
+df <- twListToDF(bitcoin)
+df <- df[, order(names(df))]
+df$created <- strftime(df$created, '%Y-%m-%d')
+if (file.exists(paste("bitcoin", '_stack.csv'))==FALSE) write.csv(df, file=paste("bitcoin", '_stack.csv'), row.names=F) 
+stack <- read.csv(file=paste("bitcoin", '_stack.csv'))
+stack <- rbind(stack, df)
+stack <- subset(stack, !duplicated(stack$text))
+write.csv(stack, file=paste("bitcoin", '_stack.csv'), row.names=F)
 
-neg.words <- scan('D:/Users/D14124207/Downloads/negative-words.txt', what='character', comment.char=";") 
-                     
-score.sentiment <- function(sentences, pos.words, neg.words, .progress="none"){
+score.sentiment <- function(sentences, pos.words, neg.words, .progress='none')
+{
   require(plyr)
   require(stringr)
-  
-  # we got a vector of sentences. plyr will handle a list
-  # or a vector as an “l” for us
-  # we want a simple array (“a”) of scores back, so we use 
-  # “l” + “a” + “ply” = “laply”:
-  
-  scores <- laply(sentences, function(sentence, pos.words, neg.words) {
-    
-    # clean up sentences with R’s regex-driven global substitute, gsub():
-    sentence <- gsub('[[:punct:]]', '', sentence)
-    sentence <- gsub('[[:cntrl:]]', '', sentence)
-    sentence <- gsub('\\d+', '', sentence)
-    # and convert to lower case:
+  scores <- laply(sentences, function(sentence, pos.words, neg.words){
+    sentence <- gsub('[[:punct:]]', "", sentence)
+    sentence <- gsub('[[:cntrl:]]', "", sentence)
+    sentence <- gsub('\\d+', "", sentence)
     sentence <- tolower(sentence)
-    
-    # split into words. str_split is in the stringr package
     word.list <- str_split(sentence, '\\s+')
-    # sometimes a list() is one level of hierarchy too much
     words <- unlist(word.list)
-    
-    # compare our words to the dictionaries of positive & negative terms
     pos.matches <- match(words, pos.words)
     neg.matches <- match(words, neg.words)
-    
-    # match() returns the position of the matched term or NA
-    # we just want a TRUE/FALSE:
     pos.matches <- !is.na(pos.matches)
     neg.matches <- !is.na(neg.matches)
-    
-    # and conveniently enough, TRUE/FALSE will be treated as 1/0 by sum():
     score <- sum(pos.matches) - sum(neg.matches)
     return(score)
-  }, pos.words, neg.words, .progress=.progress )
-  scores.df = data.frame(score=scores, text=sentences)
+  }, pos.words, neg.words, .progress=.progress)
+  scores.df <- data.frame(score=scores, text=sentences)
   return(scores.df)
 }
 
 
-analysis <- score.sentiment(tweet_df$text, pos.words, neg.words,.progress='text') # calls sentiment function
+pos <- scan('D:/Users/D14124207/Downloads/positive-words.txt', what='character', comment.char=";")
 
-hist(analysis$score)
+
+neg <- scan('D:/Users/D14124207/Downloads/negative-words.txt', what='character', comment.char=";") 
+
+
+Dataset <- stack
+Dataset$text <- as.factor(Dataset$text)
+Dataset$text<- str_replace_all(Dataset$text,"í ½í²¸í ½í²°' "," ")
+scores <- score.sentiment(Dataset$text, pos, neg, .progress='text')
+
+
+write.csv(scores, file=paste("bitcoin", '_scores.csv'), row.names=TRUE)
+stat <- scores
+stat$created <- stack$created
+stat$created <- as.Date(stat$created)
+stat <- mutate(stat, tweet=ifelse(stat$score > 0, 'positive', ifelse(stat$score < 0, 'negative', 'neutral')))
+by.tweet <- group_by(stat, tweet, created)
+
+by.tweet <- summarise(by.tweet, number=n())
+write.csv(by.tweet, file=paste("bitcoin", '_opin.csv'), row.names=TRUE)
+
+
+ggplot(by.tweet, aes(created, number)) + geom_line(aes(group=tweet, color=tweet), size=2) +
+  geom_point(aes(group=tweet, color=tweet), size=4) +
+  theme(text = element_text(size=18), axis.text.x = element_text(angle=90, vjust=1)) +
+  
+  ggtitle(bitcoin)
