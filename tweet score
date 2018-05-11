@@ -1,80 +1,36 @@
-bitcoin<-searchTwitter("bitcoin", n=1500)
+#install the packages
+
+install.packages("ggmap")
+install.packages("twitteR")
+install.packages("tm")
+
+
+library(twitteR)
 library(stringr)
 library(tm)
-install.packages("ggmap")
 library(ggmap)
 library(plyr)
 library(dplyr)
-library(wordcloud)
+library(purrr)
 
+#need to access twitter API
+api_key <- '24bX1GdLrWz4nPRFfVToEC8HV'
+api_secret <- 'OjLiRyCIA0gytIjh5qvqhJKsnNHMLzyN7uC1JmHvmHZgDqwJzM'
+access_token <- '935260315180249088-cMoc1FFpvE5ZFqcSN0JlDBELFqXIPG2'
+access_token_secret <- '4f0Nk7tXMumLk5g4Ot5HF4uS82vvvZBcykINP7s1ow1cQ'
 
-bitcoin2 <- twListToDF(bitcoin)
+#query twitter API
+setup_twitter_oauth(api_key,
+                    api_secret,
+                    access_token,
+                    access_token_secret) 
 
-myCorpus <- VCorpus(VectorSource(bitcoin2$text))
-#removeURL <- function(x) gsub("http[^[:space:]]*", "", x)
-myCorpus <- tm_map(myCorpus, content_transformer(removeURL))
-#removeNumPunct <- function(x) gsub("[^[:alpha:][:space:]]*", "", x)
-#myCorpus <- tm_map(myCorpus, content_transformer(removeNumPunct))
-myCorpus <- tm_map(myCorpus, stripWhitespace)
-#myCorpus <- tm_map(myCorpus, stemDocument)
-myCorpus <- Corpus(VectorSource(myCorpus))
+bitcoin<-searchTwitter("bitcoin", n=1500)
+#map_df funtion from purrr
+bitcoin_df <- tbl_df(map_df(bitcoin, as.data.frame))
+View(bitcoin_df)
 
-
-dtm <- DocumentTermMatrix(myCorpus)
-inspect(dtm)
-
-findFreqTerms(dtm, 5)
-
-inspect(removeSparseTerms(dtm, 0.4))
-
-
-#https://cran.r-project.org/web/packages/tm/vignettes/tm.pdf
-wordFreq <- function(corpus, word) {
-  results <- lapply(corpus,
-                    function(x) { grep(as.character(x), pattern=paste0("\\<",word)) }
-  )
-  sum(unlist(results))
-}
-tdm <- TermDocumentMatrix(myCorpus,control = list(wordLengths = c(1, Inf)))
-tdm
-
-
-(freq.terms <- findFreqTerms(tdm, lowfreq = 100))
-
-
-
-myStopwords <- c(setdiff(stopwords('english'), c("r", "big")),"and", "when", "what", "to", "this","the","that","so","of","it","is","in","at","a","be","by","for","have","on","our","are","i","will","with","you")
-myCorpus <- tm_map(myCorpus, removeWords, myStopwords)
-library(wordcloud)
-wordcloud(myCorpus ,max.words =150,min.freq=3,scale=c(4,.5),colors=palette())
-
-
-
-tdm <- TermDocumentMatrix(myCorpus,control = list(wordLengths = c(1, Inf)))
-tdm
-
-#Most frequent words after removing stop words
-
-(freq.terms <- findFreqTerms(tdm, lowfreq = 50))
-
-#Plot of most frequent words
-term.freq <- rowSums(as.matrix(tdm))
-term.freq <- subset(term.freq, term.freq >= 50)
-df2 <- data.frame(term = names(term.freq), freq = term.freq)
-ggplot(df2, aes(x=term, y=freq)) + geom_bar(stat="identity") +xlab("Terms") + ylab("Count") + coord_flip() +theme(axis.text=element_text(size=7))
-
-
-#Calculating the sentiment score
-
-df <- twListToDF(bitcoin)
-df <- df[, order(names(df))]
-df$created <- strftime(df$created, '%Y-%m-%d')
-if (file.exists(paste("bitcoin", '_stack.csv'))==FALSE) write.csv(df, file=paste("bitcoin", '_stack.csv'), row.names=F) 
-stack <- read.csv(file=paste("bitcoin", '_stack.csv'))
-stack <- rbind(stack, df)
-stack <- subset(stack, !duplicated(stack$text))
-write.csv(stack, file=paste("bitcoin", '_stack.csv'), row.names=F)
-
+#analysis function
 score.sentiment <- function(sentences, pos.words, neg.words, .progress='none')
 {
   require(plyr)
@@ -97,17 +53,70 @@ score.sentiment <- function(sentences, pos.words, neg.words, .progress='none')
   return(scores.df)
 }
 
+#import the positive and negative words list
+pos.words <- scan('D:/Users/D14124207/Downloads/positive-words.txt', what='character', comment.char=";")
+neg.words <- scan('D:/Users/D14124207/Downloads/negative-words.txt', what='character', comment.char=";") 
 
-pos <- scan('D:/Users/D14124207/Downloads/positive-words.txt', what='character', comment.char=";")
+#the below function gets rid of problem characters before running the sentiment function.
+bitcoin_df$text <- sapply(bitcoin_df$text,function(row) iconv(row, "latin1", "ASCII", sub=""))
+bscore <- score.sentiment(bitcoin_df$text, pos.words, neg.words, .progress='text')
+View(bscore)
 
 
-neg <- scan('D:/Users/D14124207/Downloads/negative-words.txt', what='character', comment.char=";") 
+hist(bscore$score)
 
 
-Dataset <- stack
-Dataset$text <- as.factor(Dataset$text)
-Dataset$text<- str_replace_all(Dataset$text,"í ½í²¸í ½í²°' "," ")
-scores <- score.sentiment(Dataset$text, pos, neg, .progress='text')
+myCorpus <- VCorpus(VectorSource(bitcoin2$text))
+#removeURL <- function(x) gsub("http[^[:space:]]*", "", x)
+#myCorpus <- tm_map(myCorpus, content_transformer(removeURL))
+myCorpus <- gsub("[^[:alpha:][:space:]]*", "", myCorpus)
+#myCorpus <- tm_map(myCorpus, content_transformer(removeNumPunct))
+myCorpus <- tm_map(myCorpus, stripWhitespace)
+#myCorpus <- tm_map(myCorpus, stemDocument)
+
+
+
+dtm <- DocumentTermMatrix(myCorpus)
+inspect(dtm)
+
+#terms that occur at least 5 times
+cx <- findFreqTerms(dtm, 100)
+
+#document term matrix get quite large, so remove sparse items
+inspect(removeSparseTerms(dtm, 0.4))
+
+
+#https://cran.r-project.org/web/packages/tm/vignettes/tm.pdf
+
+myCorpus <- Corpus(VectorSource(myCorpus))
+
+myCorpus <- tm_map(dtm, removeWords, c(stopwords("english"),"and", "are"))
+
+#stop words not getting deleted?
+#Most frequent words after removing stop words
+r<- findFreqTerms(dtm, 100)
+
+(freq.terms <- findFreqTerms(tdm, lowfreq = 50))
+
+#Plot of most frequent words
+term.freq <- rowSums(as.matrix(tdm))
+term.freq <- subset(term.freq, term.freq >= 50)
+df2 <- data.frame(term = names(term.freq), freq = term.freq)
+ggplot(df2, aes(x=term, y=freq)) + geom_bar(stat="identity") +xlab("Terms") + ylab("Count") + coord_flip() +theme(axis.text=element_text(size=7))
+
+
+#Calculating the sentiment score
+View(stopwords)
+
+df <- twListToDF(bitcoin)
+df <- df[, order(names(df))]
+df$created <- strftime(df$created, '%Y-%m-%d')
+if (file.exists(paste("bitcoin", '_stack.csv'))==FALSE) write.csv(df, file=paste("bitcoin", '_stack.csv'), row.names=F) 
+stack <- read.csv(file=paste("bitcoin", '_stack.csv'))
+stack <- rbind(stack, df)
+stack <- subset(stack, !duplicated(stack$text))
+write.csv(stack, file=paste("bitcoin", '_stack.csv'), row.names=F)
+
 
 
 write.csv(scores, file=paste("bitcoin", '_scores.csv'), row.names=TRUE)
@@ -126,3 +135,4 @@ ggplot(by.tweet, aes(created, number)) + geom_line(aes(group=tweet, color=tweet)
   theme(text = element_text(size=18), axis.text.x = element_text(angle=90, vjust=1)) +
   
   ggtitle(bitcoin)
+
